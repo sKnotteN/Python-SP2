@@ -98,7 +98,6 @@ def click(command):
 
 
 def move_mouse(x, y):
-    # pyautogui.moveTo(x, y)
     pyautogui.moveRel(x, y, duration=0.1)
 
 # while True:
