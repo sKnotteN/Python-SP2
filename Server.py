@@ -10,9 +10,9 @@ E-mail: ksknotten@outlook.com
 
 # Importer dei offentlige bibloteka
 import socket
-import pyautogui
 import threading
 from queue import Queue
+from pynput.mouse import Button, Controller
 
 
 # Set nokre variablar som skal vere lett tilgjengelege
@@ -20,11 +20,14 @@ s = None
 s_ip = None
 connection = None
 client_ip = None
-screen_width, screen_height = pyautogui.size()
-pyautogui.FAILSAFE = False
 threads = []
+gui = None
 
+# Lag ein kø variabel til trådar
 command_queue = Queue()
+
+# Lag ein kontroller til musa
+mouse = Controller()
 
 
 # Lagrer informasjonen som skal bli brukt i variabler. Lag ein TCP IPv4+ socket
@@ -49,8 +52,6 @@ def wait_for_connection():
         return client_ip
     except Exception:
         return None
-    # finally:
-    #     receive()
 
 
 # Send ein beskjed til klienten.
@@ -68,19 +69,19 @@ def receive():
     global threads
     data = None
 
+    # Start opp trådar og gjer dei klar for input frå klienten
     threads = []
     for i in range(5):
         t = threading.Thread(target=handle_commands)
         t.start()
         threads.append(t)
 
-    print(threads)
-
     print("waiting for data..")
     while True:
         try:
             data = connection.recv(1024)
 
+        # Om det dukkar opp nåken problemer med tilkoplinga så lukk sockets
         except socket.error:
             print('Socket error')
             close_connection()
@@ -94,20 +95,15 @@ def receive():
             break
 
         if data:
-            print("Received data", data)
-            # Start en tråd som handterer bevegelsar og klikk for og få fleire oppdateringar i sekundet
-            """
-            t = threading.Thread(target=pass_command, args=(data,))
-            t.setDaemon(True)
-            t.start()
-            """
+            # Put kommandoen i tråd køa
             command_queue.put(data)
-            # pass_command(data)
+
         else:
-            print("No data received")
             # Lukk tilkoplinga og opn opp for ei ny tilkopling
             print("Disconnected")
             close_connection()
+            if gui:
+                gui.server_message.set("Client disconnected")
             set_info(s_ip[1])
             receive()
             break
@@ -115,22 +111,34 @@ def receive():
 
 # Stop tilkoplinga
 def close_connection():
-    with command_queue.mutex:
-        command_queue.queue.clear()
+    # Lukk å clear trådane som ligg i kø
+    while not command_queue.empty():
+        command_queue.get()
+
+    # with command_queue.mutex:
+    #     command_queue.queue.clear()
     threads.clear()
 
-    connection.close()
-    # s.shutdown(socket.SHUT_WR)
+    # Sjekk om der er noken som er tilkopla
+    try:
+        connection.close()
+
+    except AttributeError:
+        print('No connection found')
+
     s.close()
     print("Connection dropped")
 
+
+# Handterer dei 5 trådane som vart laga
 def handle_commands():
     while True:
         cmd = command_queue.get()
         pass_command(cmd)
         command_queue.task_done()
 
-# Ikkje optimal
+
+# Handterer kommandoane som kjem frå klienten
 def pass_command(data):
     try:
         command = str(data.decode('utf-8'))
@@ -138,6 +146,7 @@ def pass_command(data):
         print("Command is not valid")
         return
 
+    # Sjekk om klienten prøvar og flytte på musa
     try:
         k = command.rfind(";") + 2
         coordinates = command[k:]
@@ -151,21 +160,21 @@ def pass_command(data):
         # Om Click funksjonen returnerer True er det ein scroll kommando
         if click(command):
             # Oppsett slik at x her egentlig blir y
-            pyautogui.scroll(int(x))
+            mouse.scroll(0, x)
 
 
 # Utfør dei forskjellige kommandoane
 def click(command):
     print(command)
     if command.endswith("rightdown"):
-        pyautogui.mouseDown(button='right')
+        mouse.press(Button.right)
     elif command.endswith("rightup"):
-        pyautogui.mouseUp(button='right')
+        mouse.release(Button.right)
 
     elif command.endswith("leftdown"):
-        pyautogui.mouseDown(button='left')
+        mouse.press(Button.left)
     elif command.endswith("leftup"):
-        pyautogui.mouseUp(button='left')
+        mouse.release(Button.left)
 
     # Om ikkje høgre klikk eller venstre klikk så er det scroll kommando
     else:
@@ -174,7 +183,7 @@ def click(command):
 
 # Beveg musa til x og y posisjon
 def move_mouse(x, y):
-    pyautogui.moveRel(x, y, 0.1, pyautogui.easeInQuad)
+    mouse.move(x, y)
 
 
 # Spør brukaren kass port han vil høyre på
@@ -190,10 +199,3 @@ def ask_port():
                 print('Please type in a number between 2000 and 10000\n')
         except ValueError:
             print('Please type in a number\n')
-
-
-# port = 22222
-# # ask_port()
-# set_info(port)
-#
-# input("press")
